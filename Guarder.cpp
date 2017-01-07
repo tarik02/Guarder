@@ -5,7 +5,8 @@ Guarder::Guarder(byte buzzerPin, byte modulesCount, Module modules[], unsigned l
 	buzzerPin(buzzerPin),
 	modulesCount(modulesCount),
 	modules(modules),
-	eepromStart(eepromStart) {
+	eepromStart(eepromStart),
+	lastUpdate(0) {
 
 }
 
@@ -46,7 +47,6 @@ void Guarder::loop() {
 
 		if (buttonStatus) {
 			if (module.lastButtonClick == 0) {
-				Serial.println("Button click start");
 				module.lastButtonClick = time;
 			}
 		} else {
@@ -55,9 +55,6 @@ void Guarder::loop() {
 				module.lastButtonClick = 0;
 
 				onButtonClick(module, clickTime);
-
-				Serial.println("Button click end");
-				Serial.println(clickTime);
 			}
 		}
 
@@ -65,33 +62,37 @@ void Guarder::loop() {
 		if (module.status != Module::ModuleStatus::Off) {
 			digitalWrite(module.statusPin, HIGH);
 
-			bool moduleStatus = analogRead(module.guardPin) > 100;
+			if ((time - lastUpdate) > 100) {
+				lastUpdate = time;
+				
+				bool moduleStatus = analogRead(module.guardPin) > 100;
 
-			if (moduleStatus) { // Door closed
-				module.lastWarningLight = 0;
+				if (moduleStatus) { // Door closed
+					module.lastWarningLight = 0;
 
-				if (module.status == Module::ModuleStatus::WithoutWarning) {
-					module.status = Module::ModuleStatus::On;
+					if (module.status == Module::ModuleStatus::WithoutWarning) {
+						module.status = Module::ModuleStatus::On;
+					}
+
+					digitalWrite(module.warningPin, (module.wasOpened) ? (HIGH) : (LOW));
+				} else { // Door opened
+					if (module.lastWarningLight == 0) {
+						module.lastWarningLight = time;
+
+						digitalWrite(module.warningPin, LOW);
+					} else if (time - module.lastWarningLight > 250) {
+						module.warningLight = !module.warningLight;
+						module.lastWarningLight = time;
+
+						digitalWrite(module.warningPin, (module.warningLight) ? (HIGH) : (LOW));
+					}
+
+					if (module.status != Module::ModuleStatus::WithoutWarning) {
+						module.status = Module::ModuleStatus::Warning;
+					}
+
+					module.wasOpened = true;
 				}
-
-				digitalWrite(module.warningPin, (module.wasOpened) ? (HIGH) : (LOW));
-			} else { // Door opened
-				if (module.lastWarningLight == 0) {
-					module.lastWarningLight = time;
-
-					digitalWrite(module.warningPin, LOW);
-				} else if (time - module.lastWarningLight > 250) {
-					module.warningLight = !module.warningLight;
-					module.lastWarningLight = time;
-
-					digitalWrite(module.warningPin, (module.warningLight) ? (HIGH) : (LOW));
-				}
-
-				if (module.status != Module::ModuleStatus::WithoutWarning) {
-					module.status = Module::ModuleStatus::Warning;
-				}
-
-				module.wasOpened = true;
 			}
 
 			if (module.status == Module::ModuleStatus::Warning) {

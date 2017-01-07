@@ -7,12 +7,12 @@ const byte GUARDER_BUZZER_PIN = 12;
 
 
 const byte MODULE1_GUARD_PIN = 0;
-const byte MODULE1_BUTTON_PIN = 0;
-const byte MODULE1_STATUS_PIN = 1;
-const byte MODULE1_WARNING_PIN = 2;
+const byte MODULE1_BUTTON_PIN = A5;
+const byte MODULE1_STATUS_PIN = 2;
+const byte MODULE1_WARNING_PIN = 3;
 
 const byte MODULE2_GUARD_PIN = 1;
-const byte MODULE2_BUTTON_PIN = 3;
+const byte MODULE2_BUTTON_PIN = A4;
 const byte MODULE2_STATUS_PIN = 4;
 const byte MODULE2_WARNING_PIN = 5;
 

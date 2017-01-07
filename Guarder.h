@@ -11,6 +11,7 @@ private:
 	Module *modules;
 	const unsigned long eepromStart;
 
+	unsigned long lastUpdate;
 	bool update;
 
 	byte buzzPosition;
