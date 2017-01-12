@@ -22,7 +22,7 @@ public:
 	void setup();
 	void loop();
 
-	void onButtonClick(Module &module, unsigned long clickTime);
+	void onButtonClick(Module &module, unsigned long clickTime, bool isDouble);
 	void playBuzzer();
 };
 

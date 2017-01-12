@@ -9,6 +9,8 @@ Module::Module(byte guardPin, byte buttonPin, byte statusPin, byte warningPin) :
 	warningLight(false),
 	status(ModuleStatus::Off),
 	wasOpened(false),
-	lastButtonClick(0) {
+	lastButtonClick(0),
+	lastButtonUp(0),
+	clickTime(0) {
 
 }

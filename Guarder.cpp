@@ -16,6 +16,7 @@ void Guarder::setup() {
 	for (byte i = 0; i < modulesCount; ++i) {
 		auto module = modules[i];
 
+		pinMode(module.guardPin, INPUT);
 		pinMode(module.buttonPin, INPUT);
 		pinMode(module.statusPin, OUTPUT);
 		pinMode(module.warningPin, OUTPUT);
@@ -40,6 +41,14 @@ void Guarder::loop() {
 
 	update = false;
 
+
+	bool updateNow = false;
+
+	if ((time - lastUpdate) > 100) {
+		lastUpdate = time;
+		updateNow = true;
+	}
+
 	for (byte i = 0; i < modulesCount; ++i) {
 		auto &module = modules[i];
 
@@ -54,44 +63,76 @@ void Guarder::loop() {
 				unsigned long clickTime = time - module.lastButtonClick;
 				module.lastButtonClick = 0;
 
-				onButtonClick(module, clickTime);
+				if (clickTime > 50) {
+					if (module.lastButtonUp == 0) {
+						module.clickTime = clickTime;
+						module.lastButtonUp = time;
+					} else {
+						onButtonClick(module, 0, true);
+						module.lastButtonUp = 0;
+					}
+				}
+			}
+
+			if ((module.lastButtonUp != 0) && (time - module.lastButtonUp > 200)) {
+				onButtonClick(module, module.clickTime, false);
+
+				module.lastButtonUp = 0;
 			}
 		}
 
 
 		if (module.status != Module::ModuleStatus::Off) {
-			digitalWrite(module.statusPin, HIGH);
+			if (updateNow) {
+				bool moduleStatus = digitalRead(module.guardPin) == HIGH;
 
-			if ((time - lastUpdate) > 100) {
-				lastUpdate = time;
-				
-				bool moduleStatus = analogRead(module.guardPin) > 100;
-
-				if (moduleStatus) { // Door closed
-					module.lastWarningLight = 0;
-
-					if (module.status == Module::ModuleStatus::WithoutWarning) {
-						module.status = Module::ModuleStatus::On;
-					}
-
-					digitalWrite(module.warningPin, (module.wasOpened) ? (HIGH) : (LOW));
-				} else { // Door opened
+				if ((module.status == Module::ModuleStatus::Delayed) ||
+					(module.status == Module::ModuleStatus::Delayed2)) {
 					if (module.lastWarningLight == 0) {
 						module.lastWarningLight = time;
 
-						digitalWrite(module.warningPin, LOW);
-					} else if (time - module.lastWarningLight > 250) {
+						digitalWrite(module.statusPin, LOW);
+					} else if (time - module.lastWarningLight > 500) {
 						module.warningLight = !module.warningLight;
 						module.lastWarningLight = time;
 
-						digitalWrite(module.warningPin, (module.warningLight) ? (HIGH) : (LOW));
+						digitalWrite(module.statusPin, (module.warningLight) ? (HIGH) : (LOW));
 					}
 
-					if (module.status != Module::ModuleStatus::WithoutWarning) {
-						module.status = Module::ModuleStatus::Warning;
+					if ((moduleStatus) && (module.status == Module::ModuleStatus::Delayed2)) {
+						module.status = Module::ModuleStatus::On;
+					} else if ((!moduleStatus) && (module.status == Module::ModuleStatus::Delayed)) {
+						module.status = Module::ModuleStatus::Delayed2;
 					}
+				} else {
+					digitalWrite(module.statusPin, HIGH);
 
-					module.wasOpened = true;
+					if (moduleStatus) { // Door closed
+						module.lastWarningLight = 0;
+
+						if (module.status == Module::ModuleStatus::WithoutWarning) {
+							module.status = Module::ModuleStatus::On;
+						}
+
+						digitalWrite(module.warningPin, (module.wasOpened) ? (HIGH) : (LOW));
+					} else { // Door opened
+						if (module.lastWarningLight == 0) {
+							module.lastWarningLight = time;
+
+							digitalWrite(module.warningPin, LOW);
+						} else if (time - module.lastWarningLight > 250) {
+							module.warningLight = !module.warningLight;
+							module.lastWarningLight = time;
+
+							digitalWrite(module.warningPin, (module.warningLight) ? (HIGH) : (LOW));
+						}
+
+						if (module.status != Module::ModuleStatus::WithoutWarning) {
+							module.status = Module::ModuleStatus::Warning;
+						}
+
+						module.wasOpened = true;
+					}
 				}
 			}
 
@@ -130,27 +171,31 @@ void Guarder::loop() {
 	}
 }
 
-void Guarder::onButtonClick(Module &module, unsigned long clickTime) {
-	if ((clickTime > 50) && (clickTime <= 500)) {
-		if (module.status != Module::ModuleStatus::Off) {
-			module.status = Module::ModuleStatus::WithoutWarning;
-			module.wasOpened = false;
-		}
-	} else if ((clickTime > 500) && (clickTime <= 2500)) {
-		if (module.status == Module::ModuleStatus::Off) {
-			module.status = Module::ModuleStatus::On;
-		} else {
-			module.status = Module::ModuleStatus::Off;
+void Guarder::onButtonClick(Module &module, unsigned long clickTime, bool isDouble) {
+	if (isDouble) {
+		module.status = Module::ModuleStatus::Delayed;
+	} else {
+		if ((clickTime > 50) && (clickTime <= 500)) {
+			if (module.status != Module::ModuleStatus::Off) {
+				module.status = Module::ModuleStatus::WithoutWarning;
+				module.wasOpened = false;
+			}
+		} else if ((clickTime > 500) && (clickTime <= 2500)) {
+			if (module.status == Module::ModuleStatus::Off) {
+				module.status = Module::ModuleStatus::On;
+			} else {
+				module.status = Module::ModuleStatus::Off;
 
-			digitalWrite(module.statusPin, LOW);
-			digitalWrite(module.warningPin, LOW);
-			module.lastWarningLight = 0;
-			module.warningLight = false;
-			module.wasOpened = false;
-			module.lastButtonClick = 0;
-		}
+				digitalWrite(module.statusPin, LOW);
+				digitalWrite(module.warningPin, LOW);
+				module.lastWarningLight = 0;
+				module.warningLight = false;
+				module.wasOpened = false;
+				module.lastButtonClick = 0;
+			}
 
-		update = true;
+			update = true;
+		}
 	}
 }
 
