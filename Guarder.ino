@@ -1,10 +1,7 @@
 #include "Guarder.h"
 #include "Module.h"
 
-
-
 const byte GUARDER_BUZZER_PIN = 12;
-
 
 const byte MODULE1_GUARD_PIN = A0;
 const byte MODULE1_BUTTON_PIN = A5;
@@ -25,8 +22,6 @@ const byte MODULE4_GUARD_PIN = A3;
 const byte MODULE4_BUTTON_PIN = 9;
 const byte MODULE4_STATUS_PIN = 10;
 const byte MODULE4_WARNING_PIN = 11;
-
-
 
 Guarder guarder(GUARDER_BUZZER_PIN, 4, new Module[4] {
 	Module(

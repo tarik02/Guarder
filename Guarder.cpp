@@ -23,14 +23,27 @@ void Guarder::setup() {
 	}
 
 	{ // Load state from EEPROM
-		byte data = EEPROM.read(eepromStart);
+		unsigned long address = 0;
+		unsigned long sum = 0x34;
+		for (byte i = 0; i < modulesCount; ++i) {
+			auto &module = modules[i];
+			EEPROM.get(address, module.data);
+			sum += module.data.on * 4 + module.data.wasOpened * 3 + module.data.wasClosed * 8 + module.data.warningLight * 2 + (unsigned long)module.data.status;
+			address += sizeof(ModuleData);
 
-		if ((data & 0x0F) == ((~data >> 4) & 0x0F)) { // Is our data valid?
+			module.data.wasOpened = false;
+			module.data.wasClosed = false;
+		}
+
+		unsigned long esum;
+		EEPROM.get(address, esum);
+		if (sum != esum) {
 			for (byte i = 0; i < modulesCount; ++i) {
-				if (data & (1 << i)) {
-					modules[i].status = Module::ModuleStatus::On;
-				}
+				auto &module = modules[i];
+				memset(&module.data, 0, sizeof(ModuleData));
 			}
+
+			update = true; // Save normal data to EEPROM
 		}
 	}
 }
@@ -40,7 +53,6 @@ void Guarder::loop() {
 	bool buzzing = false;
 
 	update = false;
-
 
 	bool updateNow = false;
 
@@ -81,66 +93,72 @@ void Guarder::loop() {
 			}
 		}
 
+		if (updateNow) {
+			bool moduleStatus = digitalRead(module.guardPin) == HIGH;
 
-		if (module.status != Module::ModuleStatus::Off) {
-			if (updateNow) {
-				bool moduleStatus = digitalRead(module.guardPin) == HIGH;
+			if (!moduleStatus) {
+				module.data.wasClosed = true;
+			}
 
-				if ((module.status == Module::ModuleStatus::Delayed) ||
-					(module.status == Module::ModuleStatus::Delayed2)) {
-					if (module.lastWarningLight == 0) {
-						module.lastWarningLight = time;
+			if ((module.data.status == ModuleData::ModuleStatus::Delayed) ||
+				(module.data.status == ModuleData::ModuleStatus::Delayed2)) {
+				if (module.lastWarningLight == 0) {
+					module.lastWarningLight = time;
 
-						digitalWrite(module.statusPin, LOW);
-					} else if (time - module.lastWarningLight > 500) {
-						module.warningLight = !module.warningLight;
-						module.lastWarningLight = time;
+					digitalWrite(module.statusPin, LOW);
+				} else if (time - module.lastWarningLight > 500) {
+					module.data.warningLight = !module.data.warningLight;
+					module.lastWarningLight = time;
 
-						digitalWrite(module.statusPin, (module.warningLight) ? (HIGH) : (LOW));
+					digitalWrite(module.statusPin, (module.data.warningLight) ? (HIGH) : (LOW));
+				}
+
+				if ((moduleStatus) && (module.data.status == ModuleData::ModuleStatus::Delayed2)) {
+					module.data.status = ModuleData::ModuleStatus::Idle;
+				} else if ((!moduleStatus) && (module.data.status == ModuleData::ModuleStatus::Delayed)) {
+					module.data.status = ModuleData::ModuleStatus::Delayed2;
+				}
+			} else {
+				digitalWrite(module.statusPin, (module.data.on) ? (HIGH) : (LOW));
+
+				if (moduleStatus) { // Door closed
+					module.lastWarningLight = 0;
+
+					if (module.data.status == ModuleData::ModuleStatus::WithoutWarning) {
+						module.data.status = ModuleData::ModuleStatus::Idle;
 					}
 
-					if ((moduleStatus) && (module.status == Module::ModuleStatus::Delayed2)) {
-						module.status = Module::ModuleStatus::On;
-					} else if ((!moduleStatus) && (module.status == Module::ModuleStatus::Delayed)) {
-						module.status = Module::ModuleStatus::Delayed2;
-					}
-				} else {
-					digitalWrite(module.statusPin, HIGH);
-
-					if (moduleStatus) { // Door closed
-						module.lastWarningLight = 0;
-
-						if (module.status == Module::ModuleStatus::WithoutWarning) {
-							module.status = Module::ModuleStatus::On;
-						}
-
-						digitalWrite(module.warningPin, (module.wasOpened) ? (HIGH) : (LOW));
-					} else { // Door opened
+					digitalWrite(module.warningPin, (module.data.wasOpened) ? (HIGH) : (LOW));
+				} else { // Door opened
+					if (module.data.on) {
 						if (module.lastWarningLight == 0) {
 							module.lastWarningLight = time;
 
 							digitalWrite(module.warningPin, LOW);
 						} else if (time - module.lastWarningLight > 250) {
-							module.warningLight = !module.warningLight;
+							module.data.warningLight = !module.data.warningLight;
 							module.lastWarningLight = time;
 
-							digitalWrite(module.warningPin, (module.warningLight) ? (HIGH) : (LOW));
+							digitalWrite(module.warningPin, (module.data.warningLight) ? (HIGH) : (LOW));
 						}
 
-						if (module.status != Module::ModuleStatus::WithoutWarning) {
-							module.status = Module::ModuleStatus::Warning;
+						if (module.data.status != ModuleData::ModuleStatus::WithoutWarning) {
+							module.data.status = ModuleData::ModuleStatus::Warning;
 						}
 
-						module.wasOpened = true;
+						module.data.wasOpened = true;
+					} else if ((module.data.wasClosed) && (module.data.wasOpened)) {
+						digitalWrite(module.statusPin, LOW);
+						digitalWrite(module.warningPin, HIGH);
+
+						module.data.wasOpened = true;
 					}
 				}
 			}
+		}
 
-			if (module.status == Module::ModuleStatus::Warning) {
-				buzzing = true;
-			}
-		} else {
-			digitalWrite(module.statusPin, LOW);
+		if ((module.data.on) && (module.data.status == ModuleData::ModuleStatus::Warning)) {
+			buzzing = true;
 		}
 	}
 
@@ -157,41 +175,44 @@ void Guarder::loop() {
 	}
 
 	if (update) { // Save state to EEPROM
-		byte data = 0;
-
+		unsigned long address = 0;
+		unsigned long sum = 0x34;
 		for (byte i = 0; i < modulesCount; ++i) {
-			if (modules[i].status != Module::ModuleStatus::Off) {
-				data |= (1 << i);
-			}
+			auto &module = modules[i];
+			EEPROM.put(address, module.data);
+			sum += module.data.on * 4 + module.data.wasOpened * 3 + module.data.wasClosed * 8 + module.data.warningLight * 2 + (unsigned long)module.data.status;
+			address += sizeof(ModuleData);
 		}
 
-		data = data | ((~data) << 4);
-
-		EEPROM.write(eepromStart, data);
+		EEPROM.put(address, sum);
 	}
 }
 
 void Guarder::onButtonClick(Module &module, unsigned long clickTime, bool isDouble) {
 	if (isDouble) {
-		module.status = Module::ModuleStatus::Delayed;
+		if (module.data.on) {
+			module.data.status = ModuleData::ModuleStatus::Delayed;
+		}
 	} else {
 		if ((clickTime > 50) && (clickTime <= 500)) {
-			if (module.status != Module::ModuleStatus::Off) {
-				module.status = Module::ModuleStatus::WithoutWarning;
-				module.wasOpened = false;
+			if (module.data.on) {
+				module.data.status = ModuleData::ModuleStatus::WithoutWarning;
+				module.data.wasOpened = false;
 			}
 		} else if ((clickTime > 500) && (clickTime <= 2500)) {
-			if (module.status == Module::ModuleStatus::Off) {
-				module.status = Module::ModuleStatus::On;
-			} else {
-				module.status = Module::ModuleStatus::Off;
+			if (module.data.on) {
+				module.data.on = false;
 
 				digitalWrite(module.statusPin, LOW);
 				digitalWrite(module.warningPin, LOW);
 				module.lastWarningLight = 0;
-				module.warningLight = false;
-				module.wasOpened = false;
+				module.data.warningLight = false;
+				module.data.wasOpened = false;
 				module.lastButtonClick = 0;
+			} else {
+				digitalWrite(module.statusPin, HIGH);
+
+				module.data.on = true;
 			}
 
 			update = true;
@@ -202,7 +223,7 @@ void Guarder::onButtonClick(Module &module, unsigned long clickTime, bool isDoub
 void Guarder::playBuzzer() {
 	char notes[] = "c2g2C2C2";
 	int length = sizeof(notes) / sizeof(notes[0]) / 2;
-	
+
 	auto note = notes[buzzPosition * 2];
 	auto beat = (int)(notes[buzzPosition * 2 + 1] - '0');
 

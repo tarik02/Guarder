@@ -5,12 +5,8 @@ Module::Module(byte guardPin, byte buttonPin, byte statusPin, byte warningPin) :
 	buttonPin(buttonPin),
 	statusPin(statusPin),
 	warningPin(warningPin),
+	data(),
 	lastWarningLight(0),
-	warningLight(false),
-	status(ModuleStatus::Off),
-	wasOpened(false),
 	lastButtonClick(0),
 	lastButtonUp(0),
-	clickTime(0) {
-
-}
+	clickTime(0) {}
